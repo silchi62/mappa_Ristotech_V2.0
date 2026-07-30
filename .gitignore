@@ -1,1 +1,1 @@
-index.HTML
+index.html
