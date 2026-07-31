@@ -235,7 +235,6 @@
             <!-- Titolo Principale (centrato o libero di espandersi) -->
             <h2 style="width: 100%; margin-bottom: 8px;">⚙️RISTOTECH Assistance Experience</h2>
              <h2 style="width: 100%; margin-bottom: 8px; font-size: 0.65rem; color: #64748b">Vers. 2.1</h2>
-            
             <!-- Mini Dashboard Statistiche Mese (Forzata Sotto) -->
             <div id="dashboard-contatori-mese" style="
                 width: 100%;
@@ -494,8 +493,11 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <!-- Script di Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<!-- Aggiungi questa riga per l'Autenticazione: -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 	
 	
 	
@@ -579,7 +581,7 @@ startDashboardClock();
 	
 	
 	
-        // 1. CONFIGURAZIONE GOOGLE FIREBASE
+// 1. CONFIGURAZIONE GOOGLE FIREBASE
         const firebaseConfig = {
             apiKey: "AIzaSyDN31P4tEQtdGlgwlA3wBxrvakVtdYR5IE", 
             authDomain: "map-ristotech.firebaseapp.com",
@@ -590,11 +592,22 @@ startDashboardClock();
         };
 
         firebase.initializeApp(firebaseConfig);
+
+        // 🔐 AUTENTICAZIONE ANONIMA IN BACKGROUND
+        firebase.auth().signInAnonymously()
+          .then(() => {
+            console.log("Autenticazione anonima riuscita con successo!");
+          })
+          .catch((error) => {
+            console.error("Errore durante l'autenticazione anonima:", error);
+          });
+
         const db = firebase.firestore();
-		// 🚀 FORZATURA DI SICUREZZA: Permette al tempo reale di funzionare anche aprendo il file .html direttamente, senza server!
+        // 🚀 FORZATURA DI SICUREZZA: Permette al tempo reale di funzionare anche aprendo il file .html direttamente, senza server!
         db.settings({
          experimentalForceLongPolling: true
         });
+
 
 // 2. CONFIGURAZIONE LIVELLI MAPPA
 const mappaStradale = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
