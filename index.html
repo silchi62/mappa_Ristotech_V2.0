@@ -1738,15 +1738,30 @@ function chiudiPannelloTopSms() {
 let ascoltoNotificheUfficio = null;
 
 function avviaAscoltoNotificheUfficio() {
+    // 1. Stoppiamo un eventuale ascolto precedente per non accumulare doppioni
+    if (ascoltoNotificheUfficio) {
+        ascoltoNotificheUfficio();
+        ascoltoNotificheUfficio = null;
+    }
+
     const inputOperatore = document.getElementById('mittente-sms-operatore');
-    const ioOperatore = inputOperatore ? inputOperatore.value.trim() : "Ufficio";
-    const contenitoreNotifiche = document.getElementById('lista-sms-in-arrivo-ufficio'); // Facoltativo per box dedicato
+    const inputGps = document.getElementById('gps-id-tecnico');
 
-    if (ascoltoNotificheUfficio) ascoltoNotificheUfficio();
+    // Recuperiamo il nome identificativo scritto nel campo (o default "Ufficio")
+    let ioOperatore = "Ufficio";
+    if (inputOperatore && inputOperatore.value.trim() !== "") {
+        ioOperatore = inputOperatore.value.trim();
+    } else if (inputGps && inputGps.value.trim() !== "") {
+        ioOperatore = inputGps.value.trim();
+    }
 
-    // Ascolta TUTTI i messaggi non letti inviati all'Ufficio o con idTecnico == Ufficio
+    console.log("📡 Ascolto notifiche SMS attivo in tempo reale per:", ioOperatore);
+
+    const contenitoreNotifiche = document.getElementById('lista-sms-in-arrivo-ufficio');
+
+    // 2. Avviamo l'ascolto continuo su Firestore su tutti i messaggi NON LETTI indirizzati a noi
     ascoltoNotificheUfficio = db.collection("messaggi_tecnici")
-        .where("idTecnico", "in", [ioOperatore, "Ufficio"])
+        .where("idTecnico", "==", ioOperatore)
         .where("letto", "==", false)
         .onSnapshot((querySnapshot) => {
             
@@ -1757,16 +1772,16 @@ function avviaAscoltoNotificheUfficio() {
                 return;
             }
 
-            // Se ci sono nuovi messaggi non letti!
+            // 3. Ogni volta che arriva un nuovo documento (SMS) non letto
             querySnapshot.forEach((doc) => {
                 const dati = doc.data();
                 const mittenteTecnico = dati.mittente || "Tecnico Sconosciuto";
                 const testo = dati.messaggio;
 
-                // 🔔 1. Suona la notifica o mostra il banner in alto per l'Ufficio!
-                mostraPannelloTopSms(`SMS DA TECNICO: ${mittenteTecnico}`, testo);
+                // Notifica acustica e visiva immediata
+                mostraPannelloTopSms(`SMS DA: ${mittenteTecnico}`, testo);
 
-                // 🎯 2. Se abbiamo un contenitore/badge dedicato nell'interfaccia dell'Ufficio:
+                // Se esiste la lista notifiche a schermo
                 if (contenitoreNotifiche) {
                     const item = document.createElement('div');
                     item.style = "background: #7c3aed; color: white; padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;";
@@ -1777,12 +1792,11 @@ function avviaAscoltoNotificheUfficio() {
                         <span style="font-size: 0.75rem; background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px;">Apri Chat</span>
                     `;
 
-                    // Al click, posziona automaticamente la tendina sul tecnico che ha scritto!
                     item.onclick = () => {
                         const selectTecnico = document.getElementById('select-tecnico-sms');
                         if (selectTecnico) {
                             selectTecnico.value = mittenteTecnico;
-                            caricaCronologiaMessaggiUfficio(); // Carica subito la chat con lui!
+                            caricaCronologiaMessaggiUfficio();
                         }
                     };
                     
@@ -1791,10 +1805,9 @@ function avviaAscoltoNotificheUfficio() {
             });
 
         }, (error) => {
-            console.error("Errore ascolto notifiche globale ufficio:", error);
+            console.error("❌ Errore nell'ascolto notifiche live:", error);
         });
 }
-
 
 
 //======================================
@@ -2079,26 +2092,30 @@ function sincronizzaSms(id) {
 document.addEventListener('DOMContentLoaded', () => {
     const idSalvato = localStorage.getItem('idTecnicoSalvato');
     const inputGps = document.getElementById('gps-id-tecnico');
+    const inputOperatore = document.getElementById('mittente-sms-operatore');
     
     if (idSalvato) {
-        // Popola il campo GPS all'avvio
         if (inputGps) inputGps.value = idSalvato;
-
-        // Popola il campo SMS all'avvio
+        if (inputOperatore && !inputOperatore.value) inputOperatore.value = idSalvato;
         sincronizzaSms(idSalvato);
     }
 
-    // Sincronizza anche mentre il tecnico digita il nome a tastiera
+    // Listener sull'input: ri-avvia l'ascolto LIVE solo quando l'utente finisce o cambia la digitazione
     if (inputGps) {
-        inputGps.addEventListener('input', (e) => {
-            sincronizzaSms(e.target.value);
+        inputGps.addEventListener('change', () => {
+            avviaAscoltoNotificheUfficio();
         });
     }
 
-    // 🚀 Avviamo l'ascolto globale dei messaggi in arrivo per l'Ufficio
+    if (inputOperatore) {
+        inputOperatore.addEventListener('change', () => {
+            avviaAscoltoNotificheUfficio();
+        });
+    }
+
+    // 🚀 AVVIO IMMEDIATO ALL'APERTURA: parte subito a sentire i messaggi ricevuti senza dover toccare nulla!
     avviaAscoltoNotificheUfficio();
 });
-
 
 
 	
