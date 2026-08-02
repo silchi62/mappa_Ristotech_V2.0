@@ -1417,8 +1417,16 @@ function caricaTecniciPerSms() {
 // ==========================================================
 // CRONOLOGIA UFFICIO (Blindata senza errori di indice)
 // ==========================================================
+ ascoltoCronologiaUfficio = null;
+
 function caricaCronologiaMessaggiUfficio() {
-    const idTecnico = document.getElementById('select-tecnico-sms').value;
+    // 1. Recuperiamo sia l'operatore/mittente corrente (es. Ufficio) sia il Tecnico selezionato
+    const selectTecnico = document.getElementById('select-tecnico-sms');
+    const inputOperatore = document.getElementById('mittente-sms-operatore');
+    
+    const idTecnico = selectTecnico ? selectTecnico.value.trim() : "";
+    const ioOperatore = inputOperatore ? inputOperatore.value.trim() : "Ufficio";
+
     const contenitore = document.getElementById('cronologia-messaggi-ufficio');
 
     if (ascoltoCronologiaUfficio) {
@@ -1431,24 +1439,40 @@ function caricaCronologiaMessaggiUfficio() {
         return;
     }
 
-    contenitore.innerHTML = '<p style="font-size: 0.85rem; color: #94a3b8; font-style: italic; margin: 0;">Caricamento messaggi...</p>';
+    contenitore.innerHTML = '<p style="font-size: 0.85rem; color: #94a3b8; font-style: italic; margin: 0;">Caricamento conversazione...</p>';
 
-    // Ascolto in tempo reale ultra-semplice (non richiede indici complessi su Firebase)
+    // 2. Query ultra-flessibile: prende tutti i messaggi dove l'ID Tecnico o il Mittente coinvolgono le due parti
     ascoltoCronologiaUfficio = db.collection("messaggi_tecnici")
-        .where("idTecnico", "==", idTecnico)
+        .where("idTecnico", "in", [idTecnico, ioOperatore].filter(Boolean))
         .onSnapshot((querySnapshot) => {
             contenitore.innerHTML = "";
 
             if (querySnapshot.empty) {
-                contenitore.innerHTML = '<p style="font-size: 0.85rem; color: #64748b; font-style: italic; margin: 0;">Nessun messaggio inviato a questo tecnico di recente.</p>';
+                contenitore.innerHTML = '<p style="font-size: 0.85rem; color: #64748b; font-style: italic; margin: 0;">Nessun messaggio scambiato con questo tecnico di recente.</p>';
                 return;
             }
 
-            // Estraiamo i messaggi in un array per poterli ordinare noi via software dal più recente
+            // Estraiamo i messaggi filtrando per la conversazione specifica ed ordinando via JS
             let messaggi = [];
             querySnapshot.forEach((doc) => {
-                messaggi.push({ id: doc.id, ...doc.data() });
+                const dati = doc.data();
+                const mittente = (dati.mittente && dati.mittente.trim() !== "") ? dati.mittente.trim() : "Ufficio";
+                
+                // Filtro di sicurezza: mostriamo solo gli SMS scambiati specificamente tra l'Ufficio e QUESTO Tecnico
+                const appartieneAConversazione = 
+                    (dati.idTecnico === idTecnico && mittente === ioOperatore) || 
+                    (dati.idTecnico === ioOperatore && mittente === idTecnico) ||
+                    (dati.idTecnico === idTecnico); // Copre anche i messaggi inviati con mittente standard
+
+                if (appartieneAConversazione) {
+                    messaggi.push({ id: doc.id, ...dati });
+                }
             });
+
+            if (messaggi.length === 0) {
+                contenitore.innerHTML = '<p style="font-size: 0.85rem; color: #64748b; font-style: italic; margin: 0;">Nessun messaggio scambiato con questo tecnico.</p>';
+                return;
+            }
 
             // Ordina dal più recente al più vecchio usando il timestamp
             messaggi.sort((a, b) => {
@@ -1457,10 +1481,14 @@ function caricaCronologiaMessaggiUfficio() {
                 return dataB - dataA; 
             });
 
-            // Prendiamo solo gli ultimi 10 messaggi per non appesantire lo schermo
-            messaggi.slice(0, 10).forEach((dati) => {
+            // Mostriamo gli ultimi 15 messaggi
+            messaggi.slice(0, 15).forEach((dati) => {
                 const testo = dati.messaggio;
                 const letto = dati.letto;
+                const mittente = dati.mittente || "Ufficio";
+                
+                // Capire se il messaggio è INVIATO dall'ufficio o RICEVUTO dal tecnico
+                const eInviatoDaMe = (mittente === ioOperatore || mittente.includes("Ufficio"));
                 
                 let oraInvio = "-";
                 if (dati.dataInvio) {
@@ -1473,15 +1501,17 @@ function caricaCronologiaMessaggiUfficio() {
                     infoLettura = ` (Letto alle ${oraLettura})`;
                 }
 
-                const coloreStato = letto ? "#2ecc71" : "#e74c3c";
-                const testoStato = letto ? `LETTO ${infoLettura} ✅` : "NON LETTO ⏳";
+                const coloreBordo = eInviatoDaMe ? (letto ? "#2ecc71" : "#e74c3c") : "#38bdf8";
+                const etichettaMittente = eInviatoDaMe ? `📤 INVIATO (${oraInvio})` : `📥 RICEVUTO DA ${mittente.toUpperCase()} (${oraInvio})`;
+                const testoStato = eInviatoDaMe ? (letto ? `LETTO ${infoLettura} ✅` : "NON LETTO ⏳") : "MESSAGGIO RICEVUTO";
 
                 const riga = document.createElement('div');
-                riga.style = `background: #161b20; border-left: 4px solid ${coloreStato}; padding: 10px; margin-bottom: 8px; border-radius: 4px; font-size: 0.85rem; box-shadow: 0 2px 4px rgba(0,0,0,0.2);`;
+                riga.style = `background: ${eInviatoDaMe ? '#161b20' : '#0f172a'}; border-left: 4px solid ${coloreBordo}; padding: 10px; margin-bottom: 8px; border-radius: 4px; font-size: 0.85rem; box-shadow: 0 2px 4px rgba(0,0,0,0.2);`;
+                
                 riga.innerHTML = `
                     <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #94a3b8; font-weight: bold; margin-bottom: 6px;">
-                        <span>Inviato ore: ${oraInvio}</span>
-                        <span style="color: ${coloreStato}; font-weight: bold;">${testoStato}</span>
+                        <span>${etichettaMittente}</span>
+                        <span style="color: ${coloreBordo}; font-weight: bold;">${testoStato}</span>
                     </div>
                     <p style="margin: 0; color: #cbd5e1; white-space: pre-wrap; line-height: 1.4;">${testo}</p>
                 `;
@@ -1553,33 +1583,34 @@ function stoppaAscoltoMessaggi() {
 }
 
 // Aggancia Firestore per mostrare i messaggi in tempo reale sul telefono del tecnico
+// Aggancia Firestore per mostrare la conversazione in tempo reale
 function avviaAscoltoMessaggiTecnico() {
-    const idTecnico = document.getElementById('gps-id-tecnico').value.trim();
+    // Leggiamo sia l'Utente Corrente (chi usa l'app) sia il Destinatario selezionato
+    const idMio = document.getElementById('gps-id-tecnico') ? document.getElementById('gps-id-tecnico').value.trim() : "";
+    const idInterlocutore = document.getElementById('select-tecnico-sms') ? document.getElementById('select-tecnico-sms').value.trim() : "";
     const contenitore = document.getElementById('lista-messaggi-ricevuti');
     
     stoppaAscoltoMessaggi(); 
 
-    if (!idTecnico) {
-        contenitore.innerHTML = '<p style="font-size: 0.85rem; color: #64748b; font-style: italic; margin: 0;">Inserisci il tuo ID Tecnico sopra per ricevere i messaggi.</p>';
+    if (!idMio) {
+        contenitore.innerHTML = '<p style="font-size: 0.85rem; color: #64748b; font-style: italic; margin: 0;">Inserisci il tuo ID Tecnico sopra per visualizzare i messaggi.</p>';
         return;
     }
 
+    // Ascoltiamo la collezione filtrando per idTecnico (sia i messaggi ricevuti che inviati)
     ascoltoMessaggiAttivo = db.collection("messaggi_tecnici")
-        .where("idTecnico", "==", idTecnico)
-        .where("letto", "==", false)
+        .where("idTecnico", "in", [idMio, idInterlocutore].filter(Boolean))
         .orderBy("dataInvio", "desc")
+        .limit(20) // Mostra gli ultimi 20 messaggi della chat
         .onSnapshot((querySnapshot) => {
             contenitore.innerHTML = ""; 
 
             if (querySnapshot.empty) {
-                contenitore.innerHTML = '<p style="font-size: 0.85rem; color: #2ecc71; font-weight: bold; margin: 0;">✅ Ottimo! Non hai nuove disposizioni da leggere.</p>';
-                
-                // 🌟 NUOVA AGGIUNTA: Se non ci sono messaggi non letti, assicurati che il pannello in alto si chiuda
+                contenitore.innerHTML = '<p style="font-size: 0.85rem; color: #2ecc71; font-weight: bold; margin: 0;">✅ Nessun messaggio presente.</p>';
                 chiudiPannelloTopSms();
                 return;
             }
 
-            // 🌟 AGGIORNATO: Prepariamo le variabili per l'ultimo messaggio e l'ultimo mittente
             let ultimoMessaggioTesto = "";
             let ultimoMittente = "";
 
@@ -1587,14 +1618,17 @@ function avviaAscoltoMessaggiTecnico() {
                 const dati = doc.data();
                 const idMessaggio = doc.id;
                 const testo = dati.messaggio;
-                
-                // 🌟 RECUPERIAMO IL MITTENTE (se non c'è, usiamo il valore di default "Ufficio 🏢")
                 const mittente = (dati.mittente && dati.mittente.trim() !== "") ? dati.mittente : "Ufficio 🏢";
                 
-                // Salviamo il testo e il mittente del primo messaggio (il più recente della lista)
-                if (ultimoMessaggioTesto === "") {
+                // Filtriamo visivamente: mostra solo i messaggi scambiati tra ME e L'INTERLOCUTORE (se selezionato)
+                if (idInterlocutore && dati.idTecnico !== idMio && dati.idTecnico !== idInterlocutore && mittente !== idMio && mittente !== idInterlocutore) {
+                    return; // Salta i messaggi che non appartengono a questa conversazione
+                }
+
+                // Notifica pop-up solo per il messaggio non letto PIÙ RECENTE inviato A ME
+                if (ultimoMessaggioTesto === "" && dati.letto === false && dati.idTecnico === idMio) {
                     ultimoMessaggioTesto = testo;
-                    ultimoMittente = mittente; // 🌟 Memorizziamo il mittente corretto
+                    ultimoMittente = mittente;
                 }
                 
                 let oraInvio = "Ora non pervenuta";
@@ -1602,24 +1636,30 @@ function avviaAscoltoMessaggiTecnico() {
                     oraInvio = dati.dataInvio.toDate().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
                 }
 
+                // Distinguiamo visivamente i messaggi INVIATI da quelli RICEVUTI
+                const eMioMessaggio = (mittente === idMio);
+                const bordoColore = eMioMessaggio ? "#38bdf8" : "#e74c3c"; // Blu per i miei, Rosso per quelli ricevuti
+                const bgColore = eMioMessaggio ? "#0f172a" : "#1e293b";
+
                 const boxMessaggio = document.createElement('div');
-                boxMessaggio.style = "background: #1e293b; border-left: 4px solid #e74c3c; padding: 10px; border-radius: 4px; margin-bottom: 10px; position: relative;";
+                boxMessaggio.style = `background: ${bgColore}; border-left: 4px solid ${bordoColore}; padding: 10px; border-radius: 4px; margin-bottom: 10px; position: relative;`;
                 
-                // 🌟 AGGIORNATO ANCHE IL BOX MESSAGGIO: Mostriamo il mittente anche nella lista della Sidebar!
                 boxMessaggio.innerHTML = `
                     <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #94a3b8; font-weight: bold; margin-bottom: 4px;">
-                        <span>👤 DA: ${mittente}</span>
+                        <span>👤 ${eMioMessaggio ? 'TU ➡️ ' + dati.idTecnico : 'DA: ' + mittente}</span>
                         <span>ORE: ${oraInvio}</span>
                     </div>
                     <p style="margin: 5px 0 10px 0; font-size: 0.9rem; color: #f1f5f9; white-space: pre-wrap; line-height: 1.4;">${testo}</p>
-                    <button onclick="segnaMessaggioComeLetto('${idMessaggio}')" style="width: 100%; background: #27ae60; color: white; border: none; padding: 5px; font-size: 0.8rem; font-weight: bold; border-radius: 4px; cursor: pointer;">
-                        Conferma Lettura ✅
-                    </button>
+                    ${(!eMioMessaggio && !dati.letto) ? `
+                        <button onclick="segnaMessaggioComeLetto('${idMessaggio}')" style="width: 100%; background: #27ae60; color: white; border: none; padding: 5px; font-size: 0.8rem; font-weight: bold; border-radius: 4px; cursor: pointer;">
+                            Conferma Lettura ✅
+                        </button>
+                    ` : ''}
                 `;
                 contenitore.appendChild(boxMessaggio);
             });
 
-            // 🌟 AGGIORNATO: Scommentiamo e passiamo sia il Mittente che il Testo al TopPanel!
+            // Fa suonare/mostrare il banner se c'è un nuovo messaggio non letto ricevuto
             if (ultimoMessaggioTesto !== "") {
                 mostraPannelloTopSms(ultimoMittente, ultimoMessaggioTesto);
             }
