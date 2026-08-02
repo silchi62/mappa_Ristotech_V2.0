@@ -420,6 +420,32 @@
 <!-- TAB 5: INVIO DISPOSIZIONI / SMS INTERNI A FIRESTORE -->
 <div id="tab-sms" class="tab-content">
     <h3>✉️ Invia Messaggio a Tecnico/Ufficio</h3>
+	
+	<div style="display: flex; align-items: center; gap: 10px;">
+    <h3>Messaggi Ufficio</h3>
+    <!-- 🛑 BADGE CONTATORE MESSAGGI NON LETTI -->
+    <span id="badge-sms-non-letti" style="
+        display: none; 
+        background-color: #ef4444; 
+        color: white; 
+        font-weight: bold; 
+        font-size: 0.8rem; 
+        padding: 2px 8px; 
+        border-radius: 12px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+        0 non letti
+    </span>
+</div>
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
     <p style="font-size: 0.85rem; color: #94a3b8; margin-top: -5px; margin-bottom: 15px;">Invia disposizioni o note di lavoro direttamente sulla bacheca del tecnico.</p>
     
     <div class="form-group">
@@ -1733,12 +1759,11 @@ function chiudiPannelloTopSms() {
 }
 
 // ==========================================================
-// ASCOLTATORE GLOBALE NOTIFICHE UFFICIO / CENTRALE
+// ASCOLTATORE GLOBALE NOTIFICHE UFFICIO CON CONTATORE BADGE
 // ==========================================================
 let ascoltoNotificheUfficio = null;
 
 function avviaAscoltoNotificheUfficio() {
-    // 1. Stoppiamo un eventuale ascolto precedente per non accumulare doppioni
     if (ascoltoNotificheUfficio) {
         ascoltoNotificheUfficio();
         ascoltoNotificheUfficio = null;
@@ -1747,7 +1772,6 @@ function avviaAscoltoNotificheUfficio() {
     const inputOperatore = document.getElementById('mittente-sms-operatore');
     const inputGps = document.getElementById('gps-id-tecnico');
 
-    // Recuperiamo il nome identificativo scritto nel campo (o default "Ufficio")
     let ioOperatore = "Ufficio";
     if (inputOperatore && inputOperatore.value.trim() !== "") {
         ioOperatore = inputOperatore.value.trim();
@@ -1755,52 +1779,47 @@ function avviaAscoltoNotificheUfficio() {
         ioOperatore = inputGps.value.trim();
     }
 
-    console.log("📡 Ascolto notifiche SMS attivo in tempo reale per:", ioOperatore);
+    console.log("📡 Ascolto notifiche e badge attivo per:", ioOperatore);
 
-    const contenitoreNotifiche = document.getElementById('lista-sms-in-arrivo-ufficio');
+    const badgeElement = document.getElementById('badge-sms-non-letti');
 
-    // 2. Avviamo l'ascolto continuo su Firestore su tutti i messaggi NON LETTI indirizzati a noi
+    // Ascolto in tempo reale su Firestore dei messaggi NON LETTI
     ascoltoNotificheUfficio = db.collection("messaggi_tecnici")
         .where("idTecnico", "==", ioOperatore)
         .where("letto", "==", false)
         .onSnapshot((querySnapshot) => {
             
-            if (querySnapshot.empty) {
-                if (contenitoreNotifiche) {
-                    contenitoreNotifiche.innerHTML = '<p style="font-size: 0.8rem; color: #64748b; margin: 0;">Nessun nuovo messaggio dai tecnici.</p>';
+            const totaleNonLetti = querySnapshot.size;
+
+            // 1. Aggiornamento Visivo del Badge Contatore
+            if (badgeElement) {
+                if (totaleNonLetti > 0) {
+                    badgeElement.innerText = `${totaleNonLetti} non letti`;
+                    badgeElement.style.display = 'inline-block';
+                } else {
+                    badgeElement.style.display = 'none';
                 }
-                return;
             }
 
-            // 3. Ogni volta che arriva un nuovo documento (SMS) non letto
+            // Se non ci sono messaggi non letti, ci fermiamo qui
+            if (querySnapshot.empty) return;
+
+            // 2. Se ci sono messaggi in arrivo, mostriamo l'avviso e aggiorniamo la chat
             querySnapshot.forEach((doc) => {
                 const dati = doc.data();
-                const mittenteTecnico = dati.mittente || "Tecnico Sconosciuto";
+                const mittenteTecnico = dati.mittente || "Tecnico";
                 const testo = dati.messaggio;
 
-                // Notifica acustica e visiva immediata
+                // Pop-up temporaneo di 30 secondi
                 mostraPannelloTopSms(`SMS DA: ${mittenteTecnico}`, testo);
 
-                // Se esiste la lista notifiche a schermo
-                if (contenitoreNotifiche) {
-                    const item = document.createElement('div');
-                    item.style = "background: #7c3aed; color: white; padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;";
-                    item.innerHTML = `
-                        <div>
-                            <strong>📩 ${mittenteTecnico}</strong>: ${testo.substring(0, 35)}...
-                        </div>
-                        <span style="font-size: 0.75rem; background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px;">Apri Chat</span>
-                    `;
-
-                    item.onclick = () => {
-                        const selectTecnico = document.getElementById('select-tecnico-sms');
-                        if (selectTecnico) {
-                            selectTecnico.value = mittenteTecnico;
-                            caricaCronologiaMessaggiUfficio();
-                        }
-                    };
-                    
-                    contenitoreNotifiche.appendChild(item);
+                // Caricamento automatico nella cronologia fissa a schermo
+                const selectTecnico = document.getElementById('select-tecnico-sms');
+                if (selectTecnico) {
+                    selectTecnico.value = mittenteTecnico;
+                    if (typeof caricaCronologiaMessaggiUfficio === "function") {
+                        caricaCronologiaMessaggiUfficio();
+                    }
                 }
             });
 
@@ -1808,7 +1827,6 @@ function avviaAscoltoNotificheUfficio() {
             console.error("❌ Errore nell'ascolto notifiche live:", error);
         });
 }
-
 
 //======================================
 // Genera un doppio bip acustico sintetizzato in tempo reale
