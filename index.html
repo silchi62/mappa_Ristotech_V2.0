@@ -1731,6 +1731,72 @@ function chiudiPannelloTopSms() {
         timerChiusuraSms = null;
     }
 }
+
+// ==========================================================
+// ASCOLTATORE GLOBALE NOTIFICHE UFFICIO / CENTRALE
+// ==========================================================
+let ascoltoNotificheUfficio = null;
+
+function avviaAscoltoNotificheUfficio() {
+    const inputOperatore = document.getElementById('mittente-sms-operatore');
+    const ioOperatore = inputOperatore ? inputOperatore.value.trim() : "Ufficio";
+    const contenitoreNotifiche = document.getElementById('lista-sms-in-arrivo-ufficio'); // Facoltativo per box dedicato
+
+    if (ascoltoNotificheUfficio) ascoltoNotificheUfficio();
+
+    // Ascolta TUTTI i messaggi non letti inviati all'Ufficio o con idTecnico == Ufficio
+    ascoltoNotificheUfficio = db.collection("messaggi_tecnici")
+        .where("idTecnico", "in", [ioOperatore, "Ufficio"])
+        .where("letto", "==", false)
+        .onSnapshot((querySnapshot) => {
+            
+            if (querySnapshot.empty) {
+                if (contenitoreNotifiche) {
+                    contenitoreNotifiche.innerHTML = '<p style="font-size: 0.8rem; color: #64748b; margin: 0;">Nessun nuovo messaggio dai tecnici.</p>';
+                }
+                return;
+            }
+
+            // Se ci sono nuovi messaggi non letti!
+            querySnapshot.forEach((doc) => {
+                const dati = doc.data();
+                const mittenteTecnico = dati.mittente || "Tecnico Sconosciuto";
+                const testo = dati.messaggio;
+
+                // 🔔 1. Suona la notifica o mostra il banner in alto per l'Ufficio!
+                mostraPannelloTopSms(`SMS DA TECNICO: ${mittenteTecnico}`, testo);
+
+                // 🎯 2. Se abbiamo un contenitore/badge dedicato nell'interfaccia dell'Ufficio:
+                if (contenitoreNotifiche) {
+                    const item = document.createElement('div');
+                    item.style = "background: #7c3aed; color: white; padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; cursor: pointer; display: flex; justify-content: space-between; align-items: center;";
+                    item.innerHTML = `
+                        <div>
+                            <strong>📩 ${mittenteTecnico}</strong>: ${testo.substring(0, 35)}...
+                        </div>
+                        <span style="font-size: 0.75rem; background: rgba(255,255,255,0.2); padding: 2px 6px; border-radius: 4px;">Apri Chat</span>
+                    `;
+
+                    // Al click, posziona automaticamente la tendina sul tecnico che ha scritto!
+                    item.onclick = () => {
+                        const selectTecnico = document.getElementById('select-tecnico-sms');
+                        if (selectTecnico) {
+                            selectTecnico.value = mittenteTecnico;
+                            caricaCronologiaMessaggiUfficio(); // Carica subito la chat con lui!
+                        }
+                    };
+                    
+                    contenitoreNotifiche.appendChild(item);
+                }
+            });
+
+        }, (error) => {
+            console.error("Errore ascolto notifiche globale ufficio:", error);
+        });
+}
+
+
+
 //======================================
 // Genera un doppio bip acustico sintetizzato in tempo reale
 function riproduciSuonoNotifica() {
@@ -2013,7 +2079,7 @@ function sincronizzaSms(id) {
 document.addEventListener('DOMContentLoaded', () => {
     const idSalvato = localStorage.getItem('idTecnicoSalvato');
     const inputGps = document.getElementById('gps-id-tecnico');
-
+    
     if (idSalvato) {
         // Popola il campo GPS all'avvio
         if (inputGps) inputGps.value = idSalvato;
@@ -2028,6 +2094,9 @@ document.addEventListener('DOMContentLoaded', () => {
             sincronizzaSms(e.target.value);
         });
     }
+
+    // 🚀 Avviamo l'ascolto globale dei messaggi in arrivo per l'Ufficio
+    avviaAscoltoNotificheUfficio();
 });
 
 
